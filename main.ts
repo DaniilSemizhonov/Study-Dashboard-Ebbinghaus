@@ -74,7 +74,7 @@ export default class StudyDashboardPlugin extends Plugin {
   }
 
   async loadDataSafely() {
-    
+
     const saved = await this.loadData() as Partial<PluginData> | null;
     this.topics = saved?.topics ?? [];
     this.settings = { ...DEFAULT_SETTINGS, ...saved?.settings };
@@ -177,7 +177,6 @@ class StudyDashboardView extends ItemView {
     root.createDiv({ cls: "subtitle", text: "Интервальное повторение по кривой Эббингауза" });
     const toolbar = root.createDiv({ cls: "study-toolbar" });
     toolbar.createEl("button", { text: "＋ Добавить тему", cls: "mod-cta" }).onclick = () => new AddTopicModal(this.app, this.plugin).open();
-    toolbar.createEl("button", { text: "Обновить" }).onclick = () => this.render();
     const due = this.plugin.dueTopics();
     const active = this.plugin.topics.filter((item) => this.plugin.dueDate(item)).length;
     const thisWeek = this.plugin.topics.flatMap((topic) => topic.reviewHistory ?? []).filter((date) => new Date(date).getTime() >= Date.now() - 7 * 86400000).length;
@@ -186,7 +185,7 @@ class StudyDashboardView extends ItemView {
     this.stat(stats, active, "активных тем");
     this.stat(stats, thisWeek, "повторений за 7 дней");
     const tabs = root.createDiv({ cls: "study-tabs" });
-    ([ ["today", "Сегодня"], ["all", "Все темы"], ["calendar", "Календарь"], ["exam", "Экзамен"], ["progress", "Прогресс"] ] as const).forEach(([key, label]) => {
+    ([ ["today", "Сегодня"], ["all", "Все темы"], ["calendar", "Календарь"], ["progress", "Прогресс"], ["exam", "Экзамен"] ] as const).forEach(([key, label]) => {
       const button = tabs.createEl("button", { text: label, cls: key === this.tab ? "is-active" : "" });
       button.onclick = () => { this.tab = key; this.render(); };
     });
