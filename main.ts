@@ -65,7 +65,7 @@ export default class StudyDashboardPlugin extends Plugin {
     this.registerView(VIEW_TYPE, (leaf) => new StudyDashboardView(leaf, this));
     this.addRibbonIcon("graduation-cap", "Открыть учебный дашборд", () => this.activateView());
     this.addCommand({ id: "open-study-dashboard", name: "Open study dashboard", callback: () => this.activateView() });
-    this.addCommand({ id: "open-study-dashboard-fullscreen", name: "Open study dashboard in main workspace", callback: () => this.activateView(true) });
+    this.addCommand({ id: "open-study-dashboard-fullscreen", name: "Open study dashboard in main workspace", callback: () => this.activateView() });
     this.addCommand({ id: "add-study-topic", name: "Add study topic", callback: () => new AddTopicModal(this.app, this).open() });
     this.addSettingTab(new StudySettingsTab(this.app, this));
     this.app.workspace.onLayoutReady(() => {
@@ -74,6 +74,7 @@ export default class StudyDashboardPlugin extends Plugin {
   }
 
   async loadDataSafely() {
+    
     const saved = await this.loadData() as Partial<PluginData> | null;
     this.topics = saved?.topics ?? [];
     this.settings = { ...DEFAULT_SETTINGS, ...saved?.settings };
@@ -136,11 +137,12 @@ export default class StudyDashboardPlugin extends Plugin {
     return path;
   }
 
-  async activateView(fullscreen = false) {
+  // Дашборд всегда открывается отдельной вкладкой в основной рабочей области.
+  async activateView() {
     const { workspace } = this.app;
-    let leaf: WorkspaceLeaf | null = fullscreen ? workspace.getLeaf("tab") : workspace.getLeavesOfType(VIEW_TYPE)[0] ?? null;
-    if (!leaf) leaf = workspace.getRightLeaf(false);
-    if (!leaf) return;
+    // Закрываем старые экземпляры, в том числе сохранённые в боковой панели.
+    workspace.getLeavesOfType(VIEW_TYPE).forEach((existingLeaf) => existingLeaf.detach());
+    const leaf: WorkspaceLeaf = workspace.getLeaf("tab");
     await leaf.setViewState({ type: VIEW_TYPE, active: true });
     workspace.revealLeaf(leaf);
     this.showDueNotice();
@@ -175,7 +177,6 @@ class StudyDashboardView extends ItemView {
     root.createDiv({ cls: "subtitle", text: "Интервальное повторение по кривой Эббингауза" });
     const toolbar = root.createDiv({ cls: "study-toolbar" });
     toolbar.createEl("button", { text: "＋ Добавить тему", cls: "mod-cta" }).onclick = () => new AddTopicModal(this.app, this.plugin).open();
-    toolbar.createEl("button", { text: "⛶ Во весь экран" }).onclick = () => this.plugin.activateView(true);
     toolbar.createEl("button", { text: "Обновить" }).onclick = () => this.render();
     const due = this.plugin.dueTopics();
     const active = this.plugin.topics.filter((item) => this.plugin.dueDate(item)).length;
@@ -318,13 +319,45 @@ class AddTopicModal extends Modal {
   teacher = "";
   semester = "";
   constructor(app: App, plugin: StudyDashboardPlugin) { super(app); this.plugin = plugin; }
+
+  // Создаёт HTML-список подсказок из значений, сохранённых в прежних темах.
+  private createSuggestionList(field: "discipline" | "course" | "teacher" | "semester"): string {
+    const id = `study-dashboard-${field}-suggestions`;
+    const values = [...new Set(this.plugin.topics
+      .map((topic) => topic[field]?.trim())
+      .filter((value): value is string => Boolean(value)))]
+      .sort((a, b) => a.localeCompare(b));
+    const list = this.contentEl.createEl("datalist", { attr: { id } });
+    values.forEach((value) => {
+      const option = list.createEl("option");
+      option.value = value;
+    });
+    return id;
+  }
+
   onOpen() {
     this.contentEl.createEl("h2", { text: "Новая изученная тема" });
     new Setting(this.contentEl).setName("Тема").setDesc("Например: «HTTP-кеширование»").addText((text) => text.setPlaceholder("Название темы").onChange((value) => this.title = value));
-    new Setting(this.contentEl).setName("Дисциплина").setDesc("Будет добавлена как тег и поле заметки.").addText((text) => text.setPlaceholder("Например: Программирование").onChange((value) => this.discipline = value));
-    new Setting(this.contentEl).setName("Курс").setDesc("Например: «Алгоритмы и структуры данных». ").addText((text) => text.setPlaceholder("Название курса").onChange((value) => this.course = value));
-    new Setting(this.contentEl).setName("Преподаватель").addText((text) => text.setPlaceholder("Имя преподавателя").onChange((value) => this.teacher = value));
-    new Setting(this.contentEl).setName("Семестр").addText((text) => text.setPlaceholder("Например: 2 курс · весна 2026").onChange((value) => this.semester = value));
+    new Setting(this.contentEl).setName("Дисциплина").setDesc("Выберите прежнее значение или введите новое.").addText((text) => {
+      text.setPlaceholder("Например: Программирование");
+      text.inputEl.setAttr("list", this.createSuggestionList("discipline"));
+      text.onChange((value) => this.discipline = value);
+    });
+    new Setting(this.contentEl).setName("Курс").setDesc("Выберите прежнее значение или введите новое.").addText((text) => {
+      text.setPlaceholder("Название курса");
+      text.inputEl.setAttr("list", this.createSuggestionList("course"));
+      text.onChange((value) => this.course = value);
+    });
+    new Setting(this.contentEl).setName("Преподаватель").setDesc("Выберите прежнее значение или введите новое.").addText((text) => {
+      text.setPlaceholder("Имя преподавателя");
+      text.inputEl.setAttr("list", this.createSuggestionList("teacher"));
+      text.onChange((value) => this.teacher = value);
+    });
+    new Setting(this.contentEl).setName("Семестр").setDesc("Выберите прежнее значение или введите новое.").addText((text) => {
+      text.setPlaceholder("Например: 2 курс · весна 2026");
+      text.inputEl.setAttr("list", this.createSuggestionList("semester"));
+      text.onChange((value) => this.semester = value);
+    });
     new Setting(this.contentEl).setName("Тип обучения").setDesc("Помогает отделить университетские задания от личных целей.").addDropdown((dropdown) => dropdown.addOption("Вуз", "Задание из вуза").addOption("Дополнительно", "Дополнительное изучение").addOption("Идея", "Идея / исследование").setValue(this.category).onChange((value) => this.category = value));
     new Setting(this.contentEl).setName("Материалы").setDesc("По одному пути к заметке или ссылке в строке.").addTextArea((text) => { text.setPlaceholder("[[Заметка]]\nhttps://example.com"); text.inputEl.rows = 7; text.onChange((value) => this.materials = value); });
     new Setting(this.contentEl).addButton((button) => button.setButtonText("Добавить и запланировать").setCta().onClick(async () => {
